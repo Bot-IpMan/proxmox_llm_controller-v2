@@ -41,7 +41,7 @@ services:
     entrypoint: ["/bin/sh","-lc",
       "echo '>> Waiting for Ollama API...' && \
        until ollama list >/dev/null 2>&1; do sleep 1; done && \
-       echo '>> Pull qwen2.5-coder:7b' && ollama pull qwen2.5-coder:7b && \
+       echo '>> Pull deepseek-coder-v2:16b' && ollama pull deepseek-coder-v2:16b && \
        echo '>> Pull nomic-embed-text' && ollama pull nomic-embed-text && \
        echo '>> Done.'"
     ]
