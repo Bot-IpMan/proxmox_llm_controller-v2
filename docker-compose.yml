@@ -1,11 +1,3 @@
-# This compose file defines a complete local LLM environment based on the
-# configuration provided by the user. In addition to Ollama and
-# Open‑WebUI, it adds a lightweight Python service that exposes a simple
-# REST API for controlling Proxmox. The controller service uses the
-# `proxmoxer` library to interact with the Proxmox API and reads its
-# connection settings from environment variables. Adjust the values in
-# a `.env` file or export them in your shell before running
-# `docker‑compose up -d`.
 services:
   ollama:
     image: ollama/ollama:latest
@@ -14,7 +6,6 @@ services:
     ports:
       - "11434:11434"
     environment:
-      # Prevent the model from spinning endlessly after a response
       - OLLAMA_KEEP_ALIVE=30s
       - OLLAMA_NUM_THREADS=4
       - OLLAMA_NUM_PARALLEL=1
@@ -23,8 +14,6 @@ services:
       - EMBEDDING_MODEL_PROVIDER=ollama
       - EMBEDDING_MODEL=nomic-embed-text
     healthcheck:
-      # Use the built‑in `ollama list` instead of curl for the
-      # healthcheck. It will wait for the API to come online.
       test: ["CMD", "ollama", "list"]
       interval: 10s
       timeout: 5s
@@ -56,9 +45,7 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
       - ENABLE_RAG_LOCAL=true
-      # Reduce the number of parallel requests to Ollama
       - OLLAMA_NUM_PARALLEL=1
-      # (optional) disable registration/signup
       # - WEBUI_AUTH=False
       - WHISPER_MODEL=large-v3
     ports:
@@ -66,27 +53,42 @@ services:
     volumes:
       - openwebui:/app/backend/data
 
-  # Python service providing a REST API to control Proxmox via proxmoxer.
   proxmox-controller:
-    image: python:3.11-slim
+    build:
+      context: .
     container_name: proxmox-controller
     restart: unless-stopped
-    working_dir: /app
-    # Bind mount the controller source code and requirements
-    volumes:
-      - ./controller:/app
     environment:
+      # Proxmox API
       - PROXMOX_HOST=${PROXMOX_HOST}
+      - PROXMOX_PORT=${PROXMOX_PORT:-8006}
       - PROXMOX_USER=${PROXMOX_USER}
       - PROXMOX_TOKEN_NAME=${PROXMOX_TOKEN_NAME}
       - PROXMOX_TOKEN_VALUE=${PROXMOX_TOKEN_VALUE}
       - PROXMOX_VERIFY_SSL=${PROXMOX_VERIFY_SSL:-False}
-    # Install requirements at runtime then launch the API server
-    command: ["/bin/sh", "-c", "pip install -r requirements.txt && uvicorn app:app --host 0.0.0.0 --port 8000"]
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-*}
+      # SSH до Proxmox для pct/exec
+      - PVE_SSH_HOST=${PVE_SSH_HOST}
+      - PVE_SSH_USER=${PVE_SSH_USER:-root}
+      - PVE_SSH_KEY_PATH=/keys/pve_id_rsa
+    volumes:
+      - ./keys:/keys:ro
+      - ./openapi.json:/app/openapi.json:ro
+      # Якщо хочеш live-reload коду під час розробки:
+      # - ./controller:/app
+    command: ["/bin/sh","-lc","pip install paramiko && pip install -r /app/requirements.txt && uvicorn app:app --host 0.0.0.0 --port 8000"]
+
     ports:
       - "8000:8000"
-    depends_on:
-      - ollama
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    # не обов'язково залежати від ollama:
+    # depends_on:
+    #   - ollama
 
 volumes:
   ollama:
