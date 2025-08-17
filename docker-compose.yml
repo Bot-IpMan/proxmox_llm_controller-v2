@@ -46,8 +46,11 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - ENABLE_RAG_LOCAL=true
       - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_KEEP_ALIVE=30s
       # - WEBUI_AUTH=False
       - WHISPER_MODEL=large-v3
+      - RAG_EMBEDDING_ENGINE=ollama  # Додайте це для рушія Ollama
+      - RAG_EMBEDDING_MODEL=nomic-embed-text  # Додайте це для моделі
     ports:
       - "3000:8080"
     volumes:

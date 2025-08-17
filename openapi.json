@@ -1,0 +1,512 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Universal LLM Controller",
+    "description": "API для керування Proxmox через LLM. Дозволяє створювати, запускати контейнери, виконувати команди та деплоїти код.",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://proxmox-controller:8000",
+      "description": "Internal Docker network"
+    },
+    {
+      "url": "http://localhost:8000",
+      "description": "Local development"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Перевірка статусу API",
+        "operationId": "checkHealth",
+        "tags": ["System"],
+        "responses": {
+          "200": {
+            "description": "API працює",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "version": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/nodes": {
+      "get": {
+        "summary": "Список Proxmox вузлів",
+        "operationId": "listNodes",
+        "tags": ["Proxmox"],
+        "responses": {
+          "200": {
+            "description": "Список вузлів",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "node": { "type": "string" },
+                      "status": { "type": "string" },
+                      "cpu": { "type": "number" },
+                      "mem": { "type": "integer" },
+                      "disk": { "type": "integer" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lxc": {
+      "get": {
+        "summary": "Список LXC контейнерів",
+        "operationId": "listLXC",
+        "tags": ["LXC"],
+        "parameters": [
+          {
+            "name": "node",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Назва вузла (наприклад: pve)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Список контейнерів",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "vmid": { "type": "integer" },
+                      "name": { "type": "string" },
+                      "status": { "type": "string", "enum": ["running", "stopped"] },
+                      "cpu": { "type": "number" },
+                      "mem": { "type": "integer" },
+                      "disk": { "type": "integer" }
+                    }
+                  }
+                },
+                "example": [
+                  { "vmid": 100, "name": "webserver", "status": "running", "cpu": 0.5, "mem": 512000000 },
+                  { "vmid": 101, "name": "database", "status": "stopped", "cpu": 0, "mem": 0 }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lxc/start": {
+      "post": {
+        "summary": "Запустити LXC контейнер",
+        "operationId": "startLXC",
+        "tags": ["LXC"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "node": { "type": "string", "description": "Вузол (опціонально)" },
+                  "vmid": { "type": "integer", "description": "ID контейнера" }
+                },
+                "required": ["vmid"]
+              },
+              "examples": {
+                "simple": {
+                  "value": { "vmid": 100 }
+                },
+                "with_node": {
+                  "value": { "node": "pve", "vmid": 100 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Контейнер запущено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "task": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lxc/stop": {
+      "post": {
+        "summary": "Зупинити LXC контейнер",
+        "operationId": "stopLXC",
+        "tags": ["LXC"],
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "boolean", "default": false },
+            "description": "Форсована зупинка"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "node": { "type": "string" },
+                  "vmid": { "type": "integer" }
+                },
+                "required": ["vmid"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Контейнер зупинено"
+          }
+        }
+      }
+    },
+    "/lxc/create": {
+      "post": {
+        "summary": "Створити новий LXC контейнер",
+        "operationId": "createLXC",
+        "tags": ["LXC"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLXCRequest"
+              },
+              "example": {
+                "vmid": 105,
+                "hostname": "test-app",
+                "cores": 2,
+                "memory": 2048,
+                "storage": "local-lvm",
+                "rootfs_gb": 8,
+                "bridge": "vmbr0",
+                "ip_cidr": "192.168.1.105/24",
+                "gateway": "192.168.1.1",
+                "password": "temppass123",
+                "ostemplate": "local:vztmpl/debian-12-standard_12.2-1_amd64.tar.zst",
+                "start": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Контейнер створено",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "created": { "type": "boolean" },
+                    "task": { "type": "string" },
+                    "vmid": { "type": "integer" },
+                    "node": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/lxc/exec": {
+      "post": {
+        "summary": "Виконати команду в LXC контейнері",
+        "operationId": "execInLXC",
+        "tags": ["LXC"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "vmid": { "type": "integer", "description": "ID контейнера" },
+                  "cmd": { "type": "string", "description": "Команда для виконання" }
+                },
+                "required": ["vmid", "cmd"]
+              },
+              "examples": {
+                "list_files": {
+                  "value": { "vmid": 100, "cmd": "ls -la /opt" }
+                },
+                "install_package": {
+                  "value": { "vmid": 100, "cmd": "apt-get update && apt-get install -y nginx" }
+                },
+                "check_service": {
+                  "value": { "vmid": 100, "cmd": "systemctl status nginx" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Результат виконання",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rc": { "type": "integer", "description": "Return code" },
+                    "stdout": { "type": "string", "description": "Standard output" },
+                    "stderr": { "type": "string", "description": "Standard error" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/deploy": {
+      "post": {
+        "summary": "Деплой коду з Git в LXC контейнер",
+        "operationId": "deployToLXC",
+        "tags": ["Deploy"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploySpec"
+              },
+              "examples": {
+                "python_app": {
+                  "value": {
+                    "target_vmid": 100,
+                    "repo_url": "https://github.com/user/my-app.git",
+                    "workdir": "/opt/my-app",
+                    "setup": [
+                      "apt-get update",
+                      "apt-get install -y git python3 python3-pip"
+                    ],
+                    "commands": [
+                      "git clone {{repo_url}} {{workdir}}",
+                      "cd {{workdir}} && pip3 install -r requirements.txt",
+                      "cd {{workdir}} && python3 app.py"
+                    ]
+                  }
+                },
+                "docker_compose": {
+                  "value": {
+                    "target_vmid": 101,
+                    "repo_url": "https://github.com/user/docker-app.git",
+                    "workdir": "/opt/docker-app",
+                    "setup": [
+                      "apt-get update",
+                      "curl -fsSL https://get.docker.com | sh"
+                    ],
+                    "commands": [
+                      "git clone {{repo_url}} {{workdir}}",
+                      "cd {{workdir}} && docker compose up -d"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Результат деплою",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": { "type": "boolean" },
+                    "steps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "cmd": { "type": "string" },
+                          "rc": { "type": "integer" },
+                          "stdout": { "type": "string" },
+                          "stderr": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ssh/run": {
+      "post": {
+        "summary": "Виконати команду через SSH на будь-якому сервері",
+        "operationId": "sshRun",
+        "tags": ["SSH"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SSHSpec"
+              },
+              "example": {
+                "host": "192.168.1.100",
+                "user": "root",
+                "cmd": "docker ps",
+                "password": "mypassword"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Результат виконання"
+          }
+        }
+      }
+    },
+    "/browser/open": {
+      "post": {
+        "summary": "Відкрити URL в браузері на віддаленому сервері",
+        "operationId": "browserOpen",
+        "tags": ["Browser"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserSpec"
+              },
+              "example": {
+                "host": "192.168.1.100",
+                "user": "user",
+                "password": "pass",
+                "action": "open",
+                "url": "https://google.com",
+                "headless": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Браузер відкрито"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateLXCRequest": {
+        "type": "object",
+        "properties": {
+          "node": { "type": "string", "description": "Proxmox node (optional)" },
+          "vmid": { "type": "integer", "description": "Container ID", "minimum": 100 },
+          "hostname": { "type": "string", "description": "Container hostname" },
+          "cores": { "type": "integer", "default": 2, "minimum": 1 },
+          "memory": { "type": "integer", "default": 2048, "minimum": 128, "description": "RAM in MB" },
+          "storage": { "type": "string", "description": "Storage name (e.g., local-lvm)" },
+          "rootfs_gb": { "type": "integer", "default": 16, "minimum": 4 },
+          "bridge": { "type": "string", "default": "vmbr0" },
+          "ip_cidr": { "type": "string", "description": "IP address with CIDR (e.g., 192.168.1.100/24)" },
+          "gateway": { "type": "string", "description": "Gateway IP" },
+          "ssh_public_key": { "type": "string", "description": "SSH public key for root" },
+          "password": { "type": "string", "description": "Root password" },
+          "unprivileged": { "type": "boolean", "default": true },
+          "features": { "type": "object", "additionalProperties": { "type": "integer" } },
+          "ostemplate": { "type": "string", "description": "Template path" },
+          "start": { "type": "boolean", "default": true, "description": "Start after creation" }
+        },
+        "required": ["vmid", "hostname", "storage", "ostemplate"]
+      },
+      "DeploySpec": {
+        "type": "object",
+        "properties": {
+          "target_vmid": { "type": "integer" },
+          "repo_url": { "type": "string" },
+          "workdir": { "type": "string", "default": "/opt/app" },
+          "setup": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Setup commands"
+          },
+          "commands": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Deploy commands"
+          }
+        },
+        "required": ["target_vmid", "repo_url"]
+      },
+      "SSHSpec": {
+        "type": "object",
+        "properties": {
+          "host": { "type": "string" },
+          "user": { "type": "string", "default": "root" },
+          "port": { "type": "integer", "default": 22 },
+          "cmd": { "type": "string" },
+          "key_path": { "type": "string" },
+          "key_data_b64": { "type": "string" },
+          "password": { "type": "string" },
+          "strict_host_key": { "type": "boolean", "default": false },
+          "env": { "type": "object", "additionalProperties": { "type": "string" } },
+          "cwd": { "type": "string" }
+        },
+        "required": ["host", "cmd"]
+      },
+      "BrowserSpec": {
+        "type": "object",
+        "properties": {
+          "host": { "type": "string" },
+          "user": { "type": "string", "default": "root" },
+          "port": { "type": "integer", "default": 22 },
+          "action": { "type": "string", "enum": ["open", "screenshot", "pdf"], "default": "open" },
+          "url": { "type": "string" },
+          "headless": { "type": "boolean", "default": true },
+          "browser_cmds": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["google-chrome", "chromium-browser", "chromium"]
+          },
+          "window_size": { "type": "string", "default": "1280,800" },
+          "output_path": { "type": "string" },
+          "extra_args": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["host", "url"]
+      }
+    }
+  }
+}

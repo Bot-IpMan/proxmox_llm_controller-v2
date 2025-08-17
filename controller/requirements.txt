@@ -1,5 +1,7 @@
 fastapi
-uvicorn
+uvicorn[standard]
 proxmoxer
 pydantic
 requests
+psutil
+paramiko
